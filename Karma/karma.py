@@ -1,7 +1,8 @@
 from errbot import BotPlugin, botcmd, re_botcmd
 from itertools import chain
+import re
 
-CONFIG_TEMPLATE = {'byself': False, 'feedback': False}
+CONFIG_TEMPLATE = {'byself': False}
 
 
 class Karma(BotPlugin):
@@ -18,35 +19,47 @@ class Karma(BotPlugin):
     def get_configuration_template(self):
         return CONFIG_TEMPLATE
 
-    def _update_karma(self, what, amount, method='+'):
+    def _update_karma(self, what, amount):
         value = int(self.get_karma(what))
         try:
-            if method == '+':
-                self['karma'][what] = value + amount
-            else:
-                self['karma'][what] = value - amount
+            new_value = value + amount
+            d = self['karma']
+            d[what] = new_value
+            self['karma'] = d
         except Exception as e:
             self.log.debug("update %s fail, e: %s" % ('karma', e))
 
     def promote_karma(self, what, amount):
-        return self._update_karma(what, amount, '+')
+        return self._update_karma(what, amount)
 
     def demote_karma(self, what, amount):
-        return self._update_karma(what, amount, '-')
+        return self._update_karma(what, amount)
 
-    def _parse_msg(self, msg, amount, method='+'):
-        try:
-            what = msg.body.split(method)[0].strip().split().pop()
-        except Exception as e:
-            self.log.debug("parse message fail - %s." % (e))
-            return None
-        return what, method, amount
+    def strip_parens(self, element):
+        if element.startswith('(') and element.endswith(')'):
+            return element[1:-1]
+        return element
 
-    def parse_promote(self, msg):
-        return self._parse_msg(msg, 1, method='+')
+    def strip_operator(self, element):
+        if element.endswith('++'):
+            return element.replace('++', '')
+        elif element.endswith('--'):
+            return element.replace('--', '')
+        return element
 
-    def parse_demote(self, msg):
-        return self._parse_msg(msg, 1, method='-')
+    def increment_all(self, msg):
+        for m in re.findall(r"\([^)]+\)\+\+|\S+\+\+", msg.body):
+            l = m.lower()
+            o = self.strip_operator(l)
+            p = self.strip_parens(o)
+            self.log.debug("increment: %s %s %s" % (l, o, p))
+            self.promote_karma(p, 1)
+
+    def decrement_all(self, msg):
+        for m in re.findall(r"\([^)]+\)\-\-|\S+\-\-", msg.body):
+            self.demote_karma(
+                    self.strip_parens(self.strip_operator(m.lower())),
+                    -1)
 
     def get_karma(self, what):
         value = str(0)
@@ -61,43 +74,29 @@ class Karma(BotPlugin):
 
     def get_karma_value(self, msg, args):
         result = ""
-        if len(args) == 1:
-            if len(args[0]) == 0:
-                what = msg.frm.nick
-            else:
-                what = args[0]
+        if len(args) > 0:
+            what = ' '.join(args)
+            self.log.debug("what: %s" % what)
             value = self.get_karma(what)
             if value == "0" or value is None:
-                result = "%s has no karma." % what
+                result = "'%s' has no karma." % what
             else:
-                result = "%s's karma points are : %s" % (what, value)
+                result = "'%s' has %s karma points" % (what, value)
         else:
             result = "!karma <thing> - Reports karma status for <thing>."
         return result
 
-    def update_karma_value(self, msg, parse_fun, update_fun):
-        """Update karma status for specific user"""
-        what, method, amount = parse_fun(msg)
-        if what:
-            # not allow self (pro|de)mote
-            if not self.config['byself']:
-                if what == msg.frm.nick:
-                    return
-            # update karma
-            update_fun(what, amount)
-
-    @re_botcmd(pattern=r'^[[\w][\S]+[\+]{2}', prefixed=False)
+    @re_botcmd(pattern=r'\S+\+\+', prefixed=False)
     def promote_karma_cmd(self, msg, args):
         """Update karma status for thing if get '++' message."""
-        return self.update_karma_value(msg, self.parse_promote, self.promote_karma)
+        return self.increment_all(msg)
 
-    @re_botcmd(pattern=r'^[[\w][\S]+[\-]{2}', prefixed=False)
+    @re_botcmd(pattern=r'\S+--', prefixed=False)
     def demote_karma_cmd(self, msg, args):
         """Update karma status for specific user if get '--' message."""
-        return self.update_karma_value(msg, self.parse_demote, self.demote_karma)
+        return self.decrement_all(msg)
 
     @botcmd(split_args_with=' ')
     def karma(self, msg, args):
         """Command to show the karma status for specific user"""
-        result = self.get_karma_value(msg, args)
-        return result
+        return self.get_karma_value(msg, args)
