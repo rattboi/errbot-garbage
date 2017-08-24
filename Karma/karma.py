@@ -42,9 +42,9 @@ class Karma(BotPlugin):
 
     def strip_operator(self, element):
         if element.endswith('++'):
-            return element.replace('++', '')
+            return element.rstrip('+')
         elif element.endswith('--'):
-            return element.replace('--', '')
+            return element.rstrip('-')
         return element
 
     def increment_all(self, msg):
@@ -77,7 +77,7 @@ class Karma(BotPlugin):
         if len(args) > 0:
             what = ' '.join(args)
             self.log.debug("what: %s" % what)
-            value = self.get_karma(what)
+            value = self.get_karma(what.lower())
             if value == "0" or value is None:
                 result = "'%s' has no karma." % what
             else:
