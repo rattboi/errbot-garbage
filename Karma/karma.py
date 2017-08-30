@@ -29,11 +29,14 @@ class Karma(BotPlugin):
         except Exception as e:
             self.log.debug("update %s fail, e: %s" % ('karma', e))
 
-    def promote_karma(self, what, amount):
-        return self._update_karma(what, amount)
+    def promote_karma(self, what):
+        return self._update_karma(what, 1)
 
-    def demote_karma(self, what, amount):
-        return self._update_karma(what, amount)
+    def demote_karma(self, what):
+        return self._update_karma(what, -1)
+
+    def strip_at(self, element):
+        return element.lstrip('@')
 
     def strip_parens(self, element):
         if element.startswith('(') and element.endswith(')'):
@@ -47,19 +50,20 @@ class Karma(BotPlugin):
             return element.rstrip('-')
         return element
 
+    def strip(self, element):
+        l = element.lower()
+        o = self.strip_operator(l)
+        p = self.strip_parens(o)
+        a = self.strip_at(p)
+        return a
+
     def increment_all(self, msg):
-        for m in re.findall(r"\([^)]+\)\+\+|\S+\+\+", msg.body):
-            l = m.lower()
-            o = self.strip_operator(l)
-            p = self.strip_parens(o)
-            self.log.debug("increment: %s %s %s" % (l, o, p))
-            self.promote_karma(p, 1)
+        for element in re.findall(r"\([^)]+\)\+\+|\S+\+\+", msg.body):
+            self.promote_karma(self.strip(element))
 
     def decrement_all(self, msg):
-        for m in re.findall(r"\([^)]+\)\-\-|\S+\-\-", msg.body):
-            self.demote_karma(
-                    self.strip_parens(self.strip_operator(m.lower())),
-                    -1)
+        for element in re.findall(r"\([^)]+\)\-\-|\S+\-\-", msg.body):
+            self.demote_karma(self.strip(element))
 
     def get_karma(self, what):
         value = str(0)
@@ -77,7 +81,7 @@ class Karma(BotPlugin):
         if len(args) > 0:
             what = ' '.join(args)
             self.log.debug("what: %s" % what)
-            value = self.get_karma(what.lower())
+            value = self.get_karma(self.strip_at(what.lower()))
             if value == "0" or value is None:
                 result = "'%s' has no karma." % what
             else:
